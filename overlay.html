@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<title>Basketball Overlay</title>
+<link href="https://fonts.googleapis.com/css2?family=Kanit:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+  html,body{margin:0;background:transparent;overflow:hidden;font-family:"Kanit","Segoe UI",sans-serif;color:#fff}
+  #wrap{position:absolute;left:50%;bottom:40px;transform:translateX(-50%);display:flex;flex-direction:column;align-items:center;gap:8px;transition:opacity .4s}
+  #wrap.hide{opacity:0}
+  #msg{background:#ffb400;color:#111;font-weight:700;font-size:26px;padding:4px 28px;border-radius:6px;transition:transform .3s,opacity .3s}
+  #msg.off{transform:translateY(12px);opacity:0}
+  #board{display:flex;align-items:stretch;height:104px;background:#12151d;border-radius:12px;overflow:hidden;box-shadow:0 8px 24px rgba(0,0,0,.5)}
+  .team{display:flex;align-items:center;gap:14px;padding:0 20px;min-width:300px;position:relative}
+  .team.b{flex-direction:row-reverse;text-align:right}
+  .team::before{content:"";position:absolute;top:0;bottom:0;width:7px;background:var(--c)}
+  .team.a::before{left:0}.team.b::before{right:0}
+  .logo{width:72px;height:72px;object-fit:contain;flex:none}
+  .logo[src=""]{visibility:hidden}
+  .info{display:flex;flex-direction:column;gap:3px;min-width:0}
+  .name{font-size:32px;font-weight:700;line-height:1;white-space:nowrap}
+  .sub{display:flex;align-items:center;gap:10px;font-size:15px;opacity:.95}
+  .team.b .sub{flex-direction:row-reverse}
+  .pips{display:flex;gap:4px}
+  .pip{width:12px;height:12px;border-radius:50%;background:#fff}
+  .pip.used{background:transparent;border:2px solid #556}
+  .bonus{background:#e63946;font-weight:700;padding:0 8px;border-radius:4px;visibility:hidden}
+  .bonus.on{visibility:visible}
+  .poss{width:0;height:0;border:10px solid transparent;visibility:hidden}
+  .a .poss{border-left:16px solid #ffb400;border-right:0}
+  .b .poss{border-right:16px solid #ffb400;border-left:0}
+  .poss.on{visibility:visible}
+  .score{width:100px;display:flex;align-items:center;justify-content:center;font-size:64px;font-weight:700;background:#fff;color:#12151d}
+  .mid{display:flex;flex-direction:column;align-items:center;justify-content:center;background:#232836;padding:0 22px;min-width:150px}
+  #q{font-size:18px;font-weight:600;color:#ffb400}
+  #clock{font-size:46px;font-weight:700;font-variant-numeric:tabular-nums;line-height:1.05}
+  #shot{margin-top:2px;background:#000;color:#ff9f1c;font-size:24px;font-weight:700;font-variant-numeric:tabular-nums;padding:0 14px;border-radius:5px;min-width:44px;text-align:center}
+  #shot.low{color:#ff3b3b}
+  #shot.hidden{display:none}
+  .pop{animation:pop .4s}
+  @keyframes pop{50%{transform:scale(1.3)}}
+</style>
+</head>
+<body>
+<div id="wrap">
+  <div id="msg" class="off"></div>
+  <div id="board" style="--ca:#e63946;--cb:#1d8cf8">
+    <div class="team a" id="tA">
+      <img class="logo" id="lA" src="" alt="">
+      <div class="info"><div class="name" id="nA"></div>
+        <div class="sub"><span class="poss" id="pA"></span><span class="pips" id="toA"></span><span id="fA"></span><span class="bonus" id="bA">BONUS</span></div></div>
+    </div>
+    <div class="score" id="sA">0</div>
+    <div class="mid"><div id="q"></div><div id="clock">10:00</div><div id="shot">24</div></div>
+    <div class="score" id="sB">0</div>
+    <div class="team b" id="tB">
+      <img class="logo" id="lB" src="" alt="">
+      <div class="info"><div class="name" id="nB"></div>
+        <div class="sub"><span class="poss" id="pB"></span><span class="pips" id="toB"></span><span id="fB"></span><span class="bonus" id="bB">BONUS</span></div></div>
+    </div>
+  </div>
+</div>
+<script>
+const KEY="bb_state",$=id=>document.getElementById(id);
+const ch=("BroadcastChannel" in window)?new BroadcastChannel("bb_scoreboard"):null;
+let S=null,prev={};
+function load(){try{const v=JSON.parse(localStorage.getItem(KEY));if(v)S=v}catch(e){}}
+function left(base){return S.running?Math.max(0,base-(Date.now()-S.startedAt)):base}
+function fmtClock(ms){
+  if(ms<60000){const t=Math.ceil(ms/100);return Math.floor(t/10)+"."+(t%10)}
+  const s=Math.ceil(ms/1000);return String(Math.floor(s/60)).padStart(2,"0")+":"+String(s%60).padStart(2,"0");
+}
+function pips(id,total,remain){
+  const el=$(id);let h="";
+  for(let i=0;i<total;i++)h+='<i class="pip'+(i<remain?"":" used")+'"></i>';
+  if(el.dataset.h!==h){el.innerHTML=h;el.dataset.h=h}
+}
+function qLabel(q){return q<=4?"Q"+q:"OT"+(q-4)}
+function pop(k,id,v){if(prev[k]!==undefined&&prev[k]!==v){const e=$(id);e.classList.remove("pop");void e.offsetWidth;e.classList.add("pop")}prev[k]=v}
+function render(){
+  if(!S)return;
+  $("wrap").classList.toggle("hide",!S.visible);
+  for(const t of ["A","B"]){
+    $("n"+t).textContent=S["name"+t];$("s"+t).textContent=S["score"+t];pop("s"+t,"s"+t,S["score"+t]);
+    $("t"+t).style.setProperty("--c",S["color"+t]);
+    const src=S["logo"+t]||"";if($("l"+t).getAttribute("src")!==src)$("l"+t).src=src;
+    $("f"+t).textContent="FOULS "+S["fouls"+t];
+    $("b"+t).classList.toggle("on",S["fouls"+t]>=S.bonusAt);
+    $("p"+t).classList.toggle("on",S.poss===t);
+    pips("to"+t,S.toTotal,S["to"+t]);
+  }
+  $("q").textContent=qLabel(S.q);
+  $("clock").textContent=fmtClock(left(S.gameMs));
+  const sh=Math.ceil(left(S.shotMs)/1000);
+  $("shot").textContent=sh;$("shot").classList.toggle("low",sh<=5);$("shot").classList.toggle("hidden",!S.showShot);
+  const m=$("msg");m.textContent=S.msg;m.classList.toggle("off",!(S.msgOn&&S.msg));
+}
+load();render();
+if(ch)ch.onmessage=e=>{S=e.data;render()};
+window.addEventListener("storage",e=>{if(e.key===KEY){load();render()}});
+setInterval(load,1000);setInterval(render,100);
+</script>
+</body>
+</html>
